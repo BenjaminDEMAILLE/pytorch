@@ -18,6 +18,8 @@
 #include <ATen/ops/nll_loss_forward_native.h>
 #include <ATen/ops/smooth_l1_loss_backward_native.h>
 #include <ATen/ops/smooth_l1_loss_native.h>
+#include <ATen/ops/multi_margin_loss_native.h>
+#include <ATen/ops/multi_margin_loss_backward_native.h>
 #endif
 
 namespace at::native {
@@ -1287,6 +1289,83 @@ Tensor nll_loss2d_backward_mps(const Tensor& grad_output,
   auto grad_input = at::zeros_like(self);
   nll_loss2d_backward_out_mps(grad_output, self, target, weight, reduction, ignore_index, total_weight, grad_input);
   return grad_input;
+}
+
+// multi_margin_loss MPS implementation using CPU fallback
+Tensor& multi_margin_loss_mps_out(
+    const Tensor& self,
+    const Tensor& target,
+    const Scalar& p,
+    const Scalar& margin,
+    const std::optional<Tensor>& weight,
+    int64_t reduction,
+    Tensor& out) {
+  Tensor cpu_out = at::multi_margin_loss_out(
+      out.to("cpu"),
+      self.to("cpu"),
+      target.to("cpu"),
+      p,
+      margin,
+      weight.has_value() ? std::optional<Tensor>(weight->to("cpu")) : std::nullopt,
+      reduction);
+  out.copy_(cpu_out);
+  return out;
+}
+
+Tensor multi_margin_loss_mps(
+    const Tensor& self,
+    const Tensor& target,
+    const Scalar& p,
+    const Scalar& margin,
+    const std::optional<Tensor>& weight,
+    int64_t reduction) {
+  return at::native::multi_margin_loss_cpu(
+      self.to("cpu"),
+      target.to("cpu"),
+      p,
+      margin,
+      weight.has_value() ? std::optional<Tensor>(weight->to("cpu")) : std::nullopt,
+      reduction).to(self.device());
+}
+
+Tensor& multi_margin_loss_mps_backward_out(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Tensor& target,
+    const Scalar& p,
+    const Scalar& margin,
+    const std::optional<Tensor>& weight,
+    int64_t reduction,
+    Tensor& grad_input) {
+  Tensor cpu_grad_input = at::multi_margin_loss_backward_out(
+      grad_input.to("cpu"),
+      grad_output.to("cpu"),
+      self.to("cpu"),
+      target.to("cpu"),
+      p,
+      margin,
+      weight.has_value() ? std::optional<Tensor>(weight->to("cpu")) : std::nullopt,
+      reduction);
+  grad_input.copy_(cpu_grad_input);
+  return grad_input;
+}
+
+Tensor multi_margin_loss_mps_backward(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Tensor& target,
+    const Scalar& p,
+    const Scalar& margin,
+    const std::optional<Tensor>& weight,
+    int64_t reduction) {
+  return at::native::multi_margin_loss_cpu_backward(
+      grad_output.to("cpu"),
+      self.to("cpu"),
+      target.to("cpu"),
+      p,
+      margin,
+      weight.has_value() ? std::optional<Tensor>(weight->to("cpu")) : std::nullopt,
+      reduction).to(grad_output.device());
 }
 
 } // namespace at::native
