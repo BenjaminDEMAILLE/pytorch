@@ -25,6 +25,10 @@
 #include <ATen/ops/max_pool3d_with_indices_native.h>
 #include <ATen/ops/max_unpool2d_native.h>
 #include <ATen/ops/max_unpool3d_native.h>
+#include <ATen/ops/fractional_max_pool2d_native.h>
+#include <ATen/ops/fractional_max_pool2d_backward_native.h>
+#include <ATen/ops/fractional_max_pool3d_native.h>
+#include <ATen/ops/fractional_max_pool3d_backward_native.h>
 #endif
 
 namespace at::native {
@@ -1290,6 +1294,77 @@ TORCH_IMPL_FUNC(avg_pool3d_backward_out_mps)(const Tensor& grad_output,
                                           divisor_override,
                                           /*pooling_dims=*/3,
                                           "avg_pool3d_backward");
+}
+
+// fractional_max_pool2d MPS implementation using CPU fallback
+TORCH_IMPL_FUNC(fractional_max_pool2d_out_mps)
+(const Tensor& self,
+ IntArrayRef kernel_size,
+ IntArrayRef output_size,
+ const Tensor& random_samples,
+ const Tensor& output,
+ const Tensor& indices) {
+  Tensor cpu_output = output.to("cpu");
+  Tensor cpu_indices = indices.to("cpu");
+  at::fractional_max_pool2d_out(cpu_output, cpu_indices, self.to("cpu"), kernel_size, output_size, random_samples.to("cpu"));
+  output.copy_(cpu_output);
+  indices.copy_(cpu_indices);
+}
+
+TORCH_IMPL_FUNC(fractional_max_pool2d_backward_mps)
+(const Tensor& gradOutput,
+ const Tensor& self,
+ IntArrayRef kernel_size,
+ IntArrayRef output_size,
+ const Tensor& indices,
+ const Tensor& gradInput) {
+  Tensor cpu_gradInput = gradInput.to("cpu");
+  at::fractional_max_pool2d_backward_out(cpu_gradInput, gradOutput.to("cpu"), self.to("cpu"), kernel_size, output_size, indices.to("cpu"));
+  gradInput.copy_(cpu_gradInput);
+}
+
+// fractional_max_pool3d MPS implementation using CPU fallback
+TORCH_IMPL_FUNC(fractional_max_pool3d_out_mps)
+(const Tensor& self,
+ int64_t poolSizeT, int64_t poolSizeH, int64_t poolSizeW,
+ int64_t outputT, int64_t outputH, int64_t outputW,
+ const Tensor& random_samples,
+ int64_t numBatch, int64_t numPlanes, int64_t inputT, int64_t inputH, int64_t inputW,
+ const Tensor& output,
+ const Tensor& indices) {
+  Tensor cpu_output = output.to("cpu");
+  Tensor cpu_indices = indices.to("cpu");
+  at::fractional_max_pool3d_out(
+      cpu_output, cpu_indices, self.to("cpu"),
+      IntArrayRef({poolSizeT, poolSizeH, poolSizeW}),
+      IntArrayRef({outputT, outputH, outputW}),
+      random_samples.to("cpu"));
+  output.copy_(cpu_output);
+  indices.copy_(cpu_indices);
+}
+
+Tensor& fractional_max_pool3d_backward_out_mps(
+    const Tensor& gradOutput,
+    const Tensor& self,
+    IntArrayRef kernel_size,
+    IntArrayRef output_size,
+    const Tensor& indices,
+    Tensor& gradInput) {
+  Tensor cpu_gradInput = gradInput.to("cpu");
+  at::fractional_max_pool3d_backward_out(
+      cpu_gradInput, gradOutput.to("cpu"), self.to("cpu"), kernel_size, output_size, indices.to("cpu"));
+  gradInput.copy_(cpu_gradInput);
+  return gradInput;
+}
+
+Tensor fractional_max_pool3d_backward_mps(
+    const Tensor& gradOutput,
+    const Tensor& self,
+    IntArrayRef kernel_size,
+    IntArrayRef output_size,
+    const Tensor& indices) {
+  return at::native::fractional_max_pool3d_backward_cpu(
+      gradOutput.to("cpu"), self.to("cpu"), kernel_size, output_size, indices.to("cpu")).to(gradOutput.device());
 }
 
 } // namespace at::native
