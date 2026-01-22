@@ -26,6 +26,8 @@
 #include <ATen/ops/topk.h>
 #include <ATen/ops/uniform_native.h>
 #include <ATen/ops/view_as_real.h>
+#include <ATen/ops/_sample_dirichlet_native.h>
+#include <ATen/ops/_dirichlet_grad_native.h>
 #endif
 
 namespace at::native {
@@ -739,6 +741,15 @@ Tensor multinomial_mps(const Tensor& self, int64_t n_sample, bool with_replaceme
   Tensor result = at::empty({0}, self.options().dtype(kLong));
   multinomial_out_mps(self, n_sample, with_replacement, gen, result);
   return result;
+}
+
+// Dirichlet distribution MPS implementation using CPU fallback
+Tensor _s_dirichlet_mps(const Tensor& self, std::optional<Generator> gen) {
+  return at::native::_s_dirichlet_cpu(self.to("cpu"), gen).to(self.device());
+}
+
+Tensor _dirichlet_grad_mps(const Tensor& x, const Tensor& alpha, const Tensor& total) {
+  return at::native::_dirichlet_grad_cpu(x.to("cpu"), alpha.to("cpu"), total.to("cpu")).to(x.device());
 }
 
 } // namespace at::native
