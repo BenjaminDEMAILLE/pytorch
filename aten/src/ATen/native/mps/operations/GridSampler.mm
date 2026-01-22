@@ -12,6 +12,8 @@
 #include <ATen/ops/grid_sampler_2d.h>
 #include <ATen/ops/grid_sampler_2d_native.h>
 #include <ATen/ops/grid_sampler_3d_native.h>
+#include <ATen/ops/grid_sampler_2d_backward_native.h>
+#include <ATen/ops/grid_sampler_3d_backward_native.h>
 #endif
 
 namespace at::native {
@@ -255,6 +257,50 @@ Tensor grid_sampler_3d_mps(const Tensor& input,
                              /*sampler_dims=*/3,
                              /*op_name=*/"grid_sampler_3d");
   return output;
+}
+
+// grid_sampler_2d_backward MPS implementation using CPU fallback
+std::tuple<Tensor, Tensor> grid_sampler_2d_backward_mps(
+    const Tensor& grad_output,
+    const Tensor& input,
+    const Tensor& grid,
+    int64_t interpolation_mode,
+    int64_t padding_mode,
+    bool align_corners,
+    std::array<bool, 2> output_mask) {
+  auto result = at::native::grid_sampler_2d_backward_cpu(
+      grad_output.to("cpu"),
+      input.to("cpu"),
+      grid.to("cpu"),
+      interpolation_mode,
+      padding_mode,
+      align_corners,
+      output_mask);
+  return std::make_tuple(
+      std::get<0>(result).to(grad_output.device()),
+      std::get<1>(result).to(grad_output.device()));
+}
+
+// grid_sampler_3d_backward MPS implementation using CPU fallback
+std::tuple<Tensor, Tensor> grid_sampler_3d_backward_mps(
+    const Tensor& grad_output,
+    const Tensor& input,
+    const Tensor& grid,
+    int64_t interpolation_mode,
+    int64_t padding_mode,
+    bool align_corners,
+    std::array<bool, 2> output_mask) {
+  auto result = at::native::grid_sampler_3d_backward_cpu(
+      grad_output.to("cpu"),
+      input.to("cpu"),
+      grid.to("cpu"),
+      interpolation_mode,
+      padding_mode,
+      align_corners,
+      output_mask);
+  return std::make_tuple(
+      std::get<0>(result).to(grad_output.device()),
+      std::get<1>(result).to(grad_output.device()));
 }
 
 } // namespace at::native
