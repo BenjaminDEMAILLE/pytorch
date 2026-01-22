@@ -381,9 +381,7 @@ if torch.backends.mps.is_available():
             "special.ndtri": None,
             "svd_lowrank": None,
             "symeig": None,
-            "take": None,
             "to": None,
-            "vdot": None,
             "segment_reduce_": None,
             "_upsample_bilinear2d_aa": [torch.uint8],  # uint8 is for CPU only
             "_upsample_bicubic2d_aa": [torch.uint8],  # uint8 is for CPU only
