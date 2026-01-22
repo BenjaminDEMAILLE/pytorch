@@ -18,6 +18,8 @@
 #include <ATen/ops/nll_loss_forward_native.h>
 #include <ATen/ops/smooth_l1_loss_backward_native.h>
 #include <ATen/ops/smooth_l1_loss_native.h>
+#include <ATen/ops/_ctc_loss_native.h>
+#include <ATen/ops/_ctc_loss_backward_native.h>
 #endif
 
 namespace at::native {
@@ -1287,6 +1289,89 @@ Tensor nll_loss2d_backward_mps(const Tensor& grad_output,
   auto grad_input = at::zeros_like(self);
   nll_loss2d_backward_out_mps(grad_output, self, target, weight, reduction, ignore_index, total_weight, grad_input);
   return grad_input;
+}
+
+// CTC loss MPS implementation using CPU fallback
+std::tuple<Tensor, Tensor> ctc_loss_mps(
+    const Tensor& log_probs,
+    const Tensor& targets,
+    IntArrayRef input_lengths,
+    IntArrayRef target_lengths,
+    int64_t blank,
+    bool zero_infinity) {
+  auto result = at::native::ctc_loss_cpu(
+      log_probs.to("cpu"),
+      targets.to("cpu"),
+      input_lengths,
+      target_lengths,
+      blank,
+      zero_infinity);
+  return std::make_tuple(
+      std::get<0>(result).to(log_probs.device()),
+      std::get<1>(result).to(log_probs.device()));
+}
+
+std::tuple<Tensor, Tensor> ctc_loss_tensor_mps(
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const Tensor& input_lengths,
+    const Tensor& target_lengths,
+    int64_t blank,
+    bool zero_infinity) {
+  auto result = at::native::ctc_loss_tensor(
+      log_probs.to("cpu"),
+      targets.to("cpu"),
+      input_lengths.to("cpu"),
+      target_lengths.to("cpu"),
+      blank,
+      zero_infinity);
+  return std::make_tuple(
+      std::get<0>(result).to(log_probs.device()),
+      std::get<1>(result).to(log_probs.device()));
+}
+
+Tensor ctc_loss_backward_mps(
+    const Tensor& grad,
+    const Tensor& log_probs,
+    const Tensor& targets,
+    IntArrayRef input_lengths,
+    IntArrayRef target_lengths,
+    const Tensor& neg_log_likelihood,
+    const Tensor& log_alpha,
+    int64_t blank,
+    bool zero_infinity) {
+  return at::native::ctc_loss_backward_cpu(
+      grad.to("cpu"),
+      log_probs.to("cpu"),
+      targets.to("cpu"),
+      input_lengths,
+      target_lengths,
+      neg_log_likelihood.to("cpu"),
+      log_alpha.to("cpu"),
+      blank,
+      zero_infinity).to(grad.device());
+}
+
+Tensor ctc_loss_backward_tensor_mps(
+    const Tensor& grad,
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const Tensor& input_lengths,
+    const Tensor& target_lengths,
+    const Tensor& neg_log_likelihood,
+    const Tensor& log_alpha,
+    int64_t blank,
+    bool zero_infinity) {
+  return at::native::ctc_loss_backward_tensor(
+      grad.to("cpu"),
+      log_probs.to("cpu"),
+      targets.to("cpu"),
+      input_lengths.to("cpu"),
+      target_lengths.to("cpu"),
+      neg_log_likelihood.to("cpu"),
+      log_alpha.to("cpu"),
+      blank,
+      zero_infinity).to(grad.device());
 }
 
 } // namespace at::native
