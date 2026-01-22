@@ -7566,6 +7566,36 @@ class TestMPS(TestCaseMPS):
         self.assertEqual(np.array([1.0000, 1.3000, 1.6000, 1.9000], dtype=np.float32), torch.range(1, 2, .3, device='mps'))
         self.assertEqual(np.arange(6.3, dtype=np.float32), torch.arange(0, 6.3, device='mps'))
 
+    def test_logspace(self):
+        # Test logspace: base^linspace(start, end, steps)
+        for dtype in [torch.float32, torch.float16]:
+            for base in [10.0, 2.0, np.e]:
+                # Basic test
+                cpu_result = torch.logspace(0, 2, 5, base=base, dtype=dtype, device='cpu')
+                mps_result = torch.logspace(0, 2, 5, base=base, dtype=dtype, device='mps')
+                self.assertEqual(cpu_result, mps_result)
+
+                # Negative to positive
+                cpu_result = torch.logspace(-2, 2, 10, base=base, dtype=dtype, device='cpu')
+                mps_result = torch.logspace(-2, 2, 10, base=base, dtype=dtype, device='mps')
+                self.assertEqual(cpu_result, mps_result)
+
+                # Descending
+                cpu_result = torch.logspace(2, 0, 5, base=base, dtype=dtype, device='cpu')
+                mps_result = torch.logspace(2, 0, 5, base=base, dtype=dtype, device='mps')
+                self.assertEqual(cpu_result, mps_result)
+
+        # Edge cases
+        # Single step
+        cpu_result = torch.logspace(1, 1, 1, base=10.0, dtype=torch.float32, device='cpu')
+        mps_result = torch.logspace(1, 1, 1, base=10.0, dtype=torch.float32, device='mps')
+        self.assertEqual(cpu_result, mps_result)
+
+        # Zero steps
+        cpu_result = torch.logspace(0, 1, 0, base=10.0, dtype=torch.float32, device='cpu')
+        mps_result = torch.logspace(0, 1, 0, base=10.0, dtype=torch.float32, device='mps')
+        self.assertEqual(cpu_result, mps_result)
+
     # Test softmax
     def test_softmax(self):
         def helper(shape, dim, channels_last=False):
