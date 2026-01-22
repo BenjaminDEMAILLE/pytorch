@@ -16,11 +16,13 @@
 #include <ATen/ops/glu_backward_native.h>
 #include <ATen/ops/glu_native.h>
 #include <ATen/ops/hardtanh_backward_native.h>
+#include <ATen/ops/leaky_relu.h>
 #include <ATen/ops/log_sigmoid_backward_native.h>
 #include <ATen/ops/log_sigmoid_forward_native.h>
 #include <ATen/ops/mish_backward_native.h>
 #include <ATen/ops/mish_native.h>
 #include <ATen/ops/relu_native.h>
+#include <ATen/ops/rrelu_with_noise_native.h>
 #include <ATen/ops/sigmoid_backward_native.h>
 #include <ATen/ops/silu_backward_native.h>
 #include <ATen/ops/silu_native.h>
@@ -1406,6 +1408,55 @@ Tensor& hardtanh_backward_out_mps(const Tensor& grad_output,
   }
 
   return grad_input;
+}
+
+// RReLU with noise MPS implementation
+Tensor& rrelu_with_noise_out_mps(
+    const Tensor& self,
+    Tensor& noise,
+    const Scalar& lower,
+    const Scalar& upper,
+    bool training,
+    std::optional<Generator> generator,
+    Tensor& output) {
+  if (training) {
+    // During training, use random slopes
+    noise.resize_as_(self);
+    noise.uniform_(lower, upper, generator);
+    auto negative_slope = noise;
+    auto self_neg = at::min(self, at::zeros_like(self));
+    auto self_pos = at::max(self, at::zeros_like(self));
+    output.resize_as_(self);
+    output.copy_(self_pos + self_neg * negative_slope);
+  } else {
+    // During inference, use mean slope
+    auto lower_val = lower.toDouble();
+    auto upper_val = upper.toDouble();
+    auto negative_slope = (lower_val + upper_val) / 2.0;
+    at::leaky_relu_out(output, self, negative_slope);
+  }
+  return output;
+}
+
+Tensor rrelu_with_noise_mps(
+    const Tensor& self,
+    Tensor& noise,
+    const Scalar& lower,
+    const Scalar& upper,
+    bool training,
+    std::optional<Generator> generator) {
+  auto output = at::empty_like(self, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+  return rrelu_with_noise_out_mps(self, noise, lower, upper, training, std::move(generator), output);
+}
+
+Tensor& rrelu_with_noise_mps_(
+    Tensor& self,
+    Tensor& noise,
+    const Scalar& lower,
+    const Scalar& upper,
+    bool training,
+    std::optional<Generator> generator) {
+  return rrelu_with_noise_out_mps(self, noise, lower, upper, training, std::move(generator), self);
 }
 
 } // namespace at::native
