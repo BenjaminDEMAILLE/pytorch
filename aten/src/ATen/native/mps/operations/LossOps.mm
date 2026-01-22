@@ -12,6 +12,8 @@
 #include <ATen/ops/huber_loss_native.h>
 #include <ATen/ops/mse_loss_backward_native.h>
 #include <ATen/ops/mse_loss_native.h>
+#include <ATen/ops/multilabel_margin_loss_forward_native.h>
+#include <ATen/ops/multilabel_margin_loss_backward_native.h>
 #include <ATen/ops/nll_loss2d_backward_native.h>
 #include <ATen/ops/nll_loss2d_forward_native.h>
 #include <ATen/ops/nll_loss_backward_native.h>
@@ -1287,6 +1289,71 @@ Tensor nll_loss2d_backward_mps(const Tensor& grad_output,
   auto grad_input = at::zeros_like(self);
   nll_loss2d_backward_out_mps(grad_output, self, target, weight, reduction, ignore_index, total_weight, grad_input);
   return grad_input;
+}
+
+// Multilabel margin loss MPS implementation using CPU fallback
+// MPS does not have native support for multilabel margin loss
+std::tuple<Tensor&, Tensor&> multilabel_margin_loss_forward_mps_out(
+    const Tensor& self,
+    const Tensor& target,
+    int64_t reduction,
+    Tensor& output,
+    Tensor& is_target) {
+  TORCH_WARN_ONCE("multilabel_margin_loss_forward on MPS uses CPU fallback");
+  auto self_cpu = self.to(at::kCPU);
+  auto target_cpu = target.to(at::kCPU);
+  auto output_cpu = at::empty({0}, self_cpu.options());
+  auto is_target_cpu = at::empty({0}, self_cpu.options());
+  at::native::multilabel_margin_loss_forward_out_cpu(self_cpu, target_cpu, reduction, output_cpu, is_target_cpu);
+  output.resize_(output_cpu.sizes());
+  output.copy_(output_cpu);
+  is_target.resize_(is_target_cpu.sizes());
+  is_target.copy_(is_target_cpu);
+  return std::tuple<Tensor&, Tensor&>(output, is_target);
+}
+
+std::tuple<Tensor, Tensor> multilabel_margin_loss_forward_mps(
+    const Tensor& self,
+    const Tensor& target,
+    int64_t reduction) {
+  TORCH_WARN_ONCE("multilabel_margin_loss_forward on MPS uses CPU fallback");
+  auto self_cpu = self.to(at::kCPU);
+  auto target_cpu = target.to(at::kCPU);
+  auto result = at::native::multilabel_margin_loss_forward_cpu(self_cpu, target_cpu, reduction);
+  return std::make_tuple(std::get<0>(result).to(at::kMPS), std::get<1>(result).to(at::kMPS));
+}
+
+Tensor& multilabel_margin_loss_backward_mps_out(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Tensor& target,
+    int64_t reduction,
+    const Tensor& is_target,
+    Tensor& grad_input) {
+  TORCH_WARN_ONCE("multilabel_margin_loss_backward on MPS uses CPU fallback");
+  auto grad_output_cpu = grad_output.to(at::kCPU);
+  auto self_cpu = self.to(at::kCPU);
+  auto target_cpu = target.to(at::kCPU);
+  auto is_target_cpu = is_target.to(at::kCPU);
+  auto grad_input_cpu = at::zeros_like(self_cpu, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+  at::native::multilabel_margin_loss_backward_cpu_out(grad_output_cpu, self_cpu, target_cpu, reduction, is_target_cpu, grad_input_cpu);
+  grad_input.copy_(grad_input_cpu);
+  return grad_input;
+}
+
+Tensor multilabel_margin_loss_backward_mps(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Tensor& target,
+    int64_t reduction,
+    const Tensor& is_target) {
+  TORCH_WARN_ONCE("multilabel_margin_loss_backward on MPS uses CPU fallback");
+  auto grad_output_cpu = grad_output.to(at::kCPU);
+  auto self_cpu = self.to(at::kCPU);
+  auto target_cpu = target.to(at::kCPU);
+  auto is_target_cpu = is_target.to(at::kCPU);
+  auto result = at::native::multilabel_margin_loss_backward_cpu(grad_output_cpu, self_cpu, target_cpu, reduction, is_target_cpu);
+  return result.to(at::kMPS);
 }
 
 } // namespace at::native
