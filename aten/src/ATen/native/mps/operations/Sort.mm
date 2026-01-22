@@ -185,3 +185,51 @@ std::tuple<Tensor&, Tensor&> kthvalue_out_mps(const Tensor& self,
   return std::forward_as_tuple(values, indices);
 }
 } // namespace at::native
+
+std::tuple<Tensor&, Tensor&> mode_out_mps(const Tensor& self,
+                                          int64_t dim_,
+                                          bool keepdim,
+                                          Tensor& values,
+                                          Tensor& indices) {
+  using namespace mps;
+  int64_t dim = maybe_wrap_dim(dim_, self.dim(), /*wrap_scalar=*/true);
+  at::assert_no_overlap(self, values);
+  _reduction_with_indices_allocate_or_resize_output(values, indices, self, dim, keepdim);
+
+  if (self.numel() == 0) {
+    values.zero_();
+    indices.zero_();
+    if (!keepdim) {
+      values.squeeze_(dim);
+      indices.squeeze_(dim);
+    }
+    return std::forward_as_tuple(values, indices);
+  }
+
+  // Implementation: for each slice along dim, compute the value with the highest frequency and its index
+  // This is a naive implementation using CPU fallback for now, as MPSGraph does not have a direct mode op
+  // TODO: Replace with a full MPSGraph implementation if/when available
+  Tensor sorted, sorted_indices;
+  std::tie(sorted, sorted_indices) = at::sort(self, dim, false);
+  auto sizes = self.sizes().vec();
+  sizes[dim] = 1;
+  values.resize_(sizes);
+  indices.resize_(sizes);
+
+  // Move to CPU for mode computation
+  auto sorted_cpu = sorted.cpu();
+  auto sorted_indices_cpu = sorted_indices.cpu();
+  auto values_cpu = values.cpu();
+  auto indices_cpu = indices.cpu();
+
+  // Use at::native::mode_out_cpu for the actual computation
+  at::native::mode_out_cpu(sorted_cpu, dim, true, values_cpu, indices_cpu);
+
+  values.copy_(values_cpu);
+  indices.copy_(indices_cpu);
+  if (!keepdim) {
+    values.squeeze_(dim);
+    indices.squeeze_(dim);
+  }
+  return std::forward_as_tuple(values, indices);
+}

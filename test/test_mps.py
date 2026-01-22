@@ -1,3 +1,35 @@
+class TestMPSMode(TestCase):
+    def test_mode_basic(self):
+        for shape in [(10,), (5, 7), (2, 3, 4)]:
+            x_cpu = torch.randint(0, 5, shape, dtype=torch.int64)
+            x_mps = x_cpu.to('mps')
+            for dim in range(x_cpu.dim()):
+                values_cpu, indices_cpu = torch.mode(x_cpu, dim=dim)
+                values_mps, indices_mps = torch.mode(x_mps, dim=dim)
+                self.assertEqual(values_mps.cpu(), values_cpu)
+                self.assertEqual(indices_mps.cpu(), indices_cpu)
+                self.assertEqual(values_mps.device.type, 'mps')
+                self.assertEqual(indices_mps.device.type, 'mps')
+
+    def test_mode_keepdim(self):
+        x_cpu = torch.randint(0, 3, (4, 6, 8), dtype=torch.int64)
+        x_mps = x_cpu.to('mps')
+        for dim in range(x_cpu.dim()):
+            values_cpu, indices_cpu = torch.mode(x_cpu, dim=dim, keepdim=True)
+            values_mps, indices_mps = torch.mode(x_mps, dim=dim, keepdim=True)
+            self.assertEqual(values_mps.cpu(), values_cpu)
+            self.assertEqual(indices_mps.cpu(), indices_cpu)
+            self.assertEqual(values_mps.device.type, 'mps')
+            self.assertEqual(indices_mps.device.type, 'mps')
+
+    def test_mode_empty(self):
+        x_cpu = torch.empty((0, 5), dtype=torch.int64)
+        x_mps = x_cpu.to('mps')
+        values_mps, indices_mps = torch.mode(x_mps, dim=0)
+        self.assertTrue((values_mps == 0).all())
+        self.assertTrue((indices_mps == 0).all())
+        self.assertEqual(values_mps.device.type, 'mps')
+        self.assertEqual(indices_mps.device.type, 'mps')
 # Owner(s): ["module: mps"]
 # ruff: noqa: F841
 import contextlib
