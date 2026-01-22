@@ -9,6 +9,7 @@
 #else
 #include <ATen/ops/addmv_native.h>
 #include <ATen/ops/dot_native.h>
+#include <ATen/ops/vdot_native.h>
 #include <ATen/ops/mm.h>
 #endif
 
@@ -115,6 +116,21 @@ Tensor dot_mps(const Tensor& self, const Tensor& other) {
   }
 
   return output;
+}
+
+// vdot is like dot, but for complex types it conjugates the first argument
+Tensor vdot_mps(const Tensor& self, const Tensor& other) {
+  using namespace mps;
+  
+  // For real types, vdot is identical to dot
+  if (!self.is_complex()) {
+    return dot_mps(self, other);
+  }
+
+  // For complex types, vdot(a, b) = dot(conj(a), b)
+  // We can leverage the existing dot_mps implementation by marking self as conjugated
+  // The dot_mps implementation already handles the is_conj() flag
+  return dot_mps(self.conj(), other);
 }
 
 static Tensor& addmv_out_mps_impl(const Tensor& self,
