@@ -13,6 +13,8 @@
 #else
 #include <ATen/ops/_softmax_backward_data_native.h>
 #include <ATen/ops/_softmax_native.h>
+#include <ATen/ops/_masked_softmax_native.h>
+#include <ATen/ops/_masked_softmax_backward_native.h>
 #endif
 
 namespace at::native {
@@ -189,6 +191,24 @@ TORCH_IMPL_FUNC(softmax_backward_mps_out)
     auto feeds = dictionaryFromPlaceholders(softmaxPlaceholder, gradOutputPlaceholder);
     runMPSGraph(stream, cachedGraph->graph(), feeds, gradInputPlaceholder);
   }
+}
+
+// Masked softmax MPS implementation using CPU fallback
+Tensor masked_softmax_mps(
+    const Tensor& input,
+    const Tensor& mask,
+    const std::optional<int64_t> dim,
+    const std::optional<int64_t> mask_type) {
+  return at::native::_masked_softmax_cpu(input.to("cpu"), mask.to("cpu"), dim, mask_type).to(input.device());
+}
+
+Tensor masked_softmax_backward_mps(
+    const Tensor& grad_output,
+    const Tensor& output,
+    const Tensor& mask,
+    const std::optional<int64_t> dim) {
+  return at::native::_masked_softmax_backward_cpu(
+      grad_output.to("cpu"), output.to("cpu"), mask.to("cpu"), dim).to(grad_output.device());
 }
 
 } // namespace at::native
