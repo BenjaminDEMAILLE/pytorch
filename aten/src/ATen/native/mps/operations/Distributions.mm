@@ -13,6 +13,7 @@
 #else
 #include <ATen/ops/argmax.h>
 #include <ATen/ops/bernoulli_native.h>
+#include <ATen/ops/binomial_native.h>
 #include <ATen/ops/cauchy_native.h>
 #include <ATen/ops/div.h>
 #include <ATen/ops/exponential_native.h>
@@ -739,6 +740,16 @@ Tensor multinomial_mps(const Tensor& self, int64_t n_sample, bool with_replaceme
   Tensor result = at::empty({0}, self.options().dtype(kLong));
   multinomial_out_mps(self, n_sample, with_replacement, gen, result);
   return result;
+}
+
+// Binomial distribution for MPS
+Tensor _s_binomial_mps(const Tensor& count, const Tensor& prob, std::optional<Generator> gen) {
+  // MPS does not have native Binomial support, use CPU fallback
+  TORCH_WARN_ONCE("MPS: binomial op is not natively supported, falling back to CPU. This may have performance implications.");
+  auto count_cpu = count.to(kCPU);
+  auto prob_cpu = prob.to(kCPU);
+  auto result_cpu = at::binomial(count_cpu, prob_cpu, gen);
+  return result_cpu.to(kMPS);
 }
 
 } // namespace at::native
