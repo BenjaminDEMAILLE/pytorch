@@ -7,6 +7,7 @@
 #include <ATen/native/mps/OperationUtils.h>
 #include <ATen/ops/arange_native.h>
 #include <ATen/ops/linspace_native.h>
+#include <ATen/ops/logspace_native.h>
 #include <ATen/ops/range_native.h>
 #include <cmath>
 #include <limits>
@@ -240,6 +241,94 @@ Tensor& linspace_out_mps(const Scalar& start, const Scalar& end, int64_t steps, 
       MPSScalar endScalar = getMPSScalar(end, ScalarType::Float);
       feeds[cachedGraph->endTensor] = getMPSGraphTensorFromScalar(stream, endScalar);
       MPSScalar multiplyScalar = getMPSScalar(multiply, ScalarType::Float);
+      feeds[cachedGraph->multiplyTensor] = getMPSGraphTensorFromScalar(stream, multiplyScalar);
+
+      runMPSGraph(stream, cachedGraph->graph(), feeds, outputPlaceholder);
+    }
+
+    if (!result.is_contiguous()) {
+      result.copy_(r);
+    }
+  }
+  return result;
+}
+
+Tensor& logspace_out_mps(const Scalar& start, const Scalar& end, int64_t steps, double base, Tensor& result) {
+  using namespace mps;
+
+  TORCH_CHECK(steps >= 0, "number of steps must be non-negative");
+  TORCH_CHECK(
+      !c10::isComplexType(result.scalar_type()),
+      "logspace on MPS does not support complex types");
+  if (result.numel() != steps) {
+    result.resize_({steps});
+  }
+
+  if (steps == 0) {
+    // skip
+  } else if (steps == 1) {
+    result.fill_(std::pow(base, start.to<double>()));
+  } else {
+    Tensor r = !mps::needsGather(result) ? result : result.contiguous();
+
+    MPSStream* stream = getCurrentMPSStream();
+    bool start_less_end = (start.to<double>() <= end.to<double>());
+
+    @autoreleasepool {
+      std::string key = "logspace_out_mps:" + getTensorsStringKey({result}) + ":" + std::to_string(steps) +
+          std::to_string(start_less_end) + ":" + std::to_string(base);
+      auto cachedGraph = LookUpOrCreateCachedGraph<RangeCachedGraph>(key, [&](auto mpsGraph, auto newCachedGraph) {
+        // Create the linspace part first
+        // Use Float64 for double precision inputs to preserve accuracy
+        MPSDataType dataType = (result.scalar_type() == ScalarType::Double) ? MPSDataTypeFloat64 : MPSDataTypeFloat32;
+
+        newCachedGraph->startTensor = mpsGraphRankedPlaceHolder(mpsGraph, dataType, @[ @1 ]);
+        newCachedGraph->endTensor = mpsGraphRankedPlaceHolder(mpsGraph, dataType, @[ @1 ]);
+        newCachedGraph->multiplyTensor = mpsGraphRankedPlaceHolder(mpsGraph, dataType, @[ @1 ]);
+
+        // Create coordinate tensor [0, 1, 2, ..., steps-1]
+        MPSGraphTensor* coordsTensor = [mpsGraph coordinateAlongAxis:0
+                                                   withShapeTensor:[mpsGraph constantWithScalar:steps
+                                                                                       dataType:MPSDataTypeInt32]
+                                                               name:nil];
+        coordsTensor = [mpsGraph castTensor:coordsTensor toType:dataType name:nil];
+
+        // Compute linspace: start + coords * multiply
+        MPSGraphTensor* scaledCoords = [mpsGraph multiplicationWithPrimaryTensor:coordsTensor
+                                                                 secondaryTensor:newCachedGraph->multiplyTensor
+                                                                            name:nil];
+        MPSGraphTensor* linspaceTensor = [mpsGraph additionWithPrimaryTensor:newCachedGraph->startTensor
+                                                             secondaryTensor:scaledCoords
+                                                                        name:nil];
+
+        // Compute base^linspace using exp(linspace * log(base))
+        MPSGraphTensor* baseTensor = [mpsGraph constantWithScalar:base dataType:dataType];
+        MPSGraphTensor* logBase = [mpsGraph logarithmWithTensor:baseTensor name:nil];
+        MPSGraphTensor* exponent = [mpsGraph multiplicationWithPrimaryTensor:linspaceTensor
+                                                             secondaryTensor:logBase
+                                                                        name:nil];
+        newCachedGraph->outputTensor = [mpsGraph exponentWithTensor:exponent name:nil];
+
+        // Cast to output type if needed
+        MPSDataType outputType = getMPSDataType(result);
+        if (outputType != dataType) {
+          newCachedGraph->outputTensor = [mpsGraph castTensor:newCachedGraph->outputTensor
+                                                       toType:outputType
+                                                         name:@"output"];
+        }
+      });
+
+      NSMutableDictionary* feeds = [[NSMutableDictionary new] autorelease];
+      auto multiply = (end.to<double>() - start.to<double>()) / ((double)steps - 1.0f);
+      Placeholder outputPlaceholder = Placeholder(cachedGraph->outputTensor, r);
+
+      // Use Double precision for scalars when result is double
+      ScalarType scalarType = (result.scalar_type() == ScalarType::Double) ? ScalarType::Double : ScalarType::Float;
+      MPSScalar startScalar = getMPSScalar(start, scalarType);
+      feeds[cachedGraph->startTensor] = getMPSGraphTensorFromScalar(stream, startScalar);
+      MPSScalar endScalar = getMPSScalar(end, scalarType);
+      feeds[cachedGraph->endTensor] = getMPSGraphTensorFromScalar(stream, endScalar);
+      MPSScalar multiplyScalar = getMPSScalar(multiply, scalarType);
       feeds[cachedGraph->multiplyTensor] = getMPSGraphTensorFromScalar(stream, multiplyScalar);
 
       runMPSGraph(stream, cachedGraph->graph(), feeds, outputPlaceholder);
