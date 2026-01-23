@@ -10,6 +10,9 @@
 #include <ATen/ops/linalg_vector_norm.h>
 #include <ATen/ops/mul.h>
 #include <ATen/ops/renorm_native.h>
+#include <ATen/ops/embedding_renorm_native.h>
+#include <ATen/ops/_unique.h>
+#include <ATen/TensorArg.h>
 #endif
 
 namespace at::native {
@@ -64,4 +67,42 @@ TORCH_IMPL_FUNC(renorm_out_mps)
 (const Tensor& self, const Scalar& p, int64_t dim, const Scalar& maxnorm, const Tensor& out) {
   renorm_out_mps(self, p, dim, maxnorm, out);
 }
+
+// embedding_renorm_ MPS implementation
+// Renormalizes embedding rows specified by indices to have at most max_norm
+Tensor& embedding_renorm_mps_(
+    Tensor& self,
+    const Tensor& indices,
+    double max_norm,
+    double norm_type) {
+  auto self_arg = TensorArg(self, "self", 1);
+  auto indices_arg = TensorArg(indices, "indices", 2);
+  checkDim("embedding_renorm_", self_arg, 2);
+  checkScalarTypes("embedding_renorm_", indices_arg, {kLong, kInt});
+
+  auto indices_contig = indices.contiguous();
+  auto num_indices = indices.numel();
+
+  if (num_indices == 0) {
+    return self;
+  }
+
+  // Get unique indices
+  auto unique_indices = std::get<0>(at::_unique(indices_contig));
+
+  // For each unique index, compute norm and scale if needed
+  for (int64_t i = 0; i < unique_indices.numel(); i++) {
+    int64_t idx = unique_indices[i].item<int64_t>();
+    auto row = self[idx];
+    auto norm = row.norm(norm_type);
+    auto norm_val = norm.item<double>();
+    if (norm_val > max_norm) {
+      auto scale = max_norm / (norm_val + 1e-7);
+      row.mul_(scale);
+    }
+  }
+
+  return self;
+}
+
 } // namespace at::native
