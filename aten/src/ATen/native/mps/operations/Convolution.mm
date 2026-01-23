@@ -6,6 +6,7 @@
 #include <ATen/ops/_mps_convolution_transpose_native.h>
 #include <ATen/ops/mps_convolution_backward_native.h>
 #include <ATen/ops/mps_convolution_transpose_backward_native.h>
+#include <ATen/ops/slow_conv_transpose3d_native.h>
 #include <fmt/format.h>
 
 namespace at::native {
@@ -680,6 +681,52 @@ std::tuple<Tensor, Tensor> mps_convolution_transpose_backward(const Tensor& inpu
   }
 
   return std::tuple<Tensor, Tensor>{grad_input, grad_weight};
+}
+
+// slow_conv_transpose3d MPS implementation using CPU fallback
+Tensor& slow_conv_transpose3d_out_mps(
+    const Tensor& self,
+    const Tensor& weight,
+    c10::SymIntArrayRef kernel_size,
+    const std::optional<Tensor>& bias,
+    c10::SymIntArrayRef stride,
+    c10::SymIntArrayRef padding,
+    c10::SymIntArrayRef output_padding,
+    c10::SymIntArrayRef dilation,
+    Tensor& out) {
+  Tensor cpu_out = out.to("cpu");
+  at::slow_conv_transpose3d_out(
+      cpu_out,
+      self.to("cpu"),
+      weight.to("cpu"),
+      kernel_size,
+      bias.has_value() ? std::optional<Tensor>(bias->to("cpu")) : std::nullopt,
+      stride,
+      padding,
+      output_padding,
+      dilation);
+  out.copy_(cpu_out);
+  return out;
+}
+
+Tensor slow_conv_transpose3d_mps(
+    const Tensor& self,
+    const Tensor& weight,
+    c10::SymIntArrayRef kernel_size,
+    const std::optional<Tensor>& bias,
+    c10::SymIntArrayRef stride,
+    c10::SymIntArrayRef padding,
+    c10::SymIntArrayRef output_padding,
+    c10::SymIntArrayRef dilation) {
+  return at::native::slow_conv_transpose3d_cpu(
+      self.to("cpu"),
+      weight.to("cpu"),
+      kernel_size,
+      bias.has_value() ? std::optional<Tensor>(bias->to("cpu")) : std::nullopt,
+      stride,
+      padding,
+      output_padding,
+      dilation).to(self.device());
 }
 
 } // namespace at::native

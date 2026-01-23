@@ -13345,12 +13345,14 @@
   dispatch:
     CPU: slow_conv_transpose3d_out_cpu
     CUDA: slow_conv_transpose3d_out_cuda
+    MPS: slow_conv_transpose3d_out_mps
 
 - func: slow_conv_transpose3d(Tensor self, Tensor weight, SymInt[3] kernel_size, Tensor? bias=None, SymInt[3] stride=1, SymInt[3] padding=0, SymInt[3] output_padding=0, SymInt[3] dilation=1) -> Tensor
   python_module: nn
   dispatch:
     CPU: slow_conv_transpose3d_cpu
     CUDA: slow_conv_transpose3d_cuda
+    MPS: slow_conv_transpose3d_mps
 
 - func: thnn_conv2d.out(Tensor self, Tensor weight, SymInt[2] kernel_size, Tensor? bias=None, SymInt[2] stride=1, SymInt[2] padding=0, *, Tensor(a!) out) -> Tensor(a!)
   python_module: nn
