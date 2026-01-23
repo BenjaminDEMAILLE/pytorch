@@ -9,6 +9,7 @@
 #else
 #include <ATen/ops/_unique2.h>
 #include <ATen/ops/_unique2_native.h>
+#include <ATen/ops/_unique_native.h>
 #include <ATen/ops/arange.h>
 #include <ATen/ops/argsort.h>
 #include <ATen/ops/cat.h>
@@ -395,6 +396,14 @@ std::tuple<Tensor, Tensor, Tensor> unique_dim_mps(const Tensor& self,
                                                   const bool return_inverse,
                                                   const bool return_counts) {
   return unique_dim_sorted_mps_impl(self, dim, return_inverse, return_counts);
+}
+
+std::tuple<Tensor, Tensor> _unique_mps(const Tensor& self,
+                                       const bool sorted,
+                                       const bool return_inverse) {
+  // _unique returns (output, inverse_indices), reuse _unique2 which returns (output, inverse, counts)
+  auto [output, inverse_indices, counts] = _unique2_mps(self, sorted, return_inverse, false);
+  return std::make_tuple(std::move(output), std::move(inverse_indices));
 }
 
 } // namespace at::native
