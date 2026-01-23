@@ -19,6 +19,7 @@
 #include <ATen/detail/MPSHooksInterface.h>
 #include <ATen/detail/MTIAHooksInterface.h>
 #include <ATen/detail/PrivateUse1HooksInterface.h>
+#include <ATen/detail/XLAHooksInterface.h>
 #include <ATen/detail/XPUHooksInterface.h>
 #include <c10/core/QEngine.h>
 #include <c10/core/impl/DeviceGuardImplInterface.h>
@@ -88,6 +89,8 @@ class TORCH_API Context {
       return at::detail::getHIPHooks();
     } else if (opt_device_type == at::kHPU) {
       return at::detail::getHPUHooks();
+    } else if (opt_device_type == at::kXLA) {
+      return at::detail::getXLAHooks();
     } else {
       TORCH_CHECK(
           false,
@@ -171,6 +174,12 @@ class TORCH_API Context {
   static long versionCuDNN() {
     return detail::getCUDAHooks().versionCuDNN();
   }
+  static long versionRuntimeCuDNN() {
+    return detail::getCUDAHooks().versionRuntimeCuDNN();
+  }
+  static long versionCuDNNFrontend() {
+    return detail::getCUDAHooks().versionCuDNNFrontend();
+  }
   static bool hasCuSOLVER() {
     return detail::getCUDAHooks().hasCuSOLVER();
   }
@@ -196,7 +205,7 @@ class TORCH_API Context {
     return c10::impl::hasDeviceGuardImpl(c10::DeviceType::IPU);
   }
   static bool hasXLA() {
-    return c10::impl::hasDeviceGuardImpl(c10::DeviceType::XLA);
+    return detail::getXLAHooks().hasXLA();
   }
   static bool hasXPU() {
     return detail::getXPUHooks().hasXPU();
@@ -373,6 +382,7 @@ class TORCH_API Context {
       bool allow_splitk = true);
   bool allowFP16AccumulationCuBLAS() const;
   void setAllowFP16AccumulationCuBLAS(bool /*b*/);
+  bool rocmAllowGroupGemmCk() const;
 
   // Matmuls can use a so-called "persistent" kernel which launches one CUDA
   // block for each SM on the GPU, and each block then iterates over multiple
