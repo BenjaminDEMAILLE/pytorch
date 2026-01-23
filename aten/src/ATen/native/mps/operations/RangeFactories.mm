@@ -257,6 +257,9 @@ Tensor& logspace_out_mps(const Scalar& start, const Scalar& end, int64_t steps, 
   using namespace mps;
 
   TORCH_CHECK(steps >= 0, "number of steps must be non-negative");
+  TORCH_CHECK(
+      !c10::isComplexType(result.scalar_type()),
+      "logspace on MPS does not support complex types");
   if (result.numel() != steps) {
     result.resize_({steps});
   }
@@ -276,7 +279,8 @@ Tensor& logspace_out_mps(const Scalar& start, const Scalar& end, int64_t steps, 
           std::to_string(start_less_end) + ":" + std::to_string(base);
       auto cachedGraph = LookUpOrCreateCachedGraph<RangeCachedGraph>(key, [&](auto mpsGraph, auto newCachedGraph) {
         // Create the linspace part first
-        MPSDataType dataType = MPSDataTypeFloat32;
+        // Use Float64 for double precision inputs to preserve accuracy
+        MPSDataType dataType = (result.scalar_type() == ScalarType::Double) ? MPSDataTypeFloat64 : MPSDataTypeFloat32;
 
         newCachedGraph->startTensor = mpsGraphRankedPlaceHolder(mpsGraph, dataType, @[ @1 ]);
         newCachedGraph->endTensor = mpsGraphRankedPlaceHolder(mpsGraph, dataType, @[ @1 ]);
@@ -305,9 +309,11 @@ Tensor& logspace_out_mps(const Scalar& start, const Scalar& end, int64_t steps, 
                                                                         name:nil];
         newCachedGraph->outputTensor = [mpsGraph exponentWithTensor:exponent name:nil];
 
-        if (getMPSDataType(result) != MPSDataTypeFloat32) {
+        // Cast to output type if needed
+        MPSDataType outputType = getMPSDataType(result);
+        if (outputType != dataType) {
           newCachedGraph->outputTensor = [mpsGraph castTensor:newCachedGraph->outputTensor
-                                                       toType:getMPSDataType(result)
+                                                       toType:outputType
                                                          name:@"output"];
         }
       });
@@ -316,11 +322,13 @@ Tensor& logspace_out_mps(const Scalar& start, const Scalar& end, int64_t steps, 
       auto multiply = (end.to<double>() - start.to<double>()) / ((double)steps - 1.0f);
       Placeholder outputPlaceholder = Placeholder(cachedGraph->outputTensor, r);
 
-      MPSScalar startScalar = getMPSScalar(start, ScalarType::Float);
+      // Use Double precision for scalars when result is double
+      ScalarType scalarType = (result.scalar_type() == ScalarType::Double) ? ScalarType::Double : ScalarType::Float;
+      MPSScalar startScalar = getMPSScalar(start, scalarType);
       feeds[cachedGraph->startTensor] = getMPSGraphTensorFromScalar(stream, startScalar);
-      MPSScalar endScalar = getMPSScalar(end, ScalarType::Float);
+      MPSScalar endScalar = getMPSScalar(end, scalarType);
       feeds[cachedGraph->endTensor] = getMPSGraphTensorFromScalar(stream, endScalar);
-      MPSScalar multiplyScalar = getMPSScalar(multiply, ScalarType::Float);
+      MPSScalar multiplyScalar = getMPSScalar(multiply, scalarType);
       feeds[cachedGraph->multiplyTensor] = getMPSGraphTensorFromScalar(stream, multiplyScalar);
 
       runMPSGraph(stream, cachedGraph->graph(), feeds, outputPlaceholder);
