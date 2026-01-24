@@ -18,6 +18,7 @@
 #include <ATen/NativeFunctions.h>
 #else
 #include <ATen/ops/_linalg_solve_ex_native.h>
+#include <ATen/ops/_cholesky_solve_helper_native.h>
 #include <ATen/ops/addbmm_native.h>
 #include <ATen/ops/addmm_native.h>
 #include <ATen/ops/addr_native.h>
@@ -32,6 +33,7 @@
 #include <ATen/ops/linalg_lu_factor_native.h>
 #include <ATen/ops/linalg_lu_native.h>
 #include <ATen/ops/linalg_solve_triangular_native.h>
+#include <ATen/ops/linalg_solve_triangular.h>
 #include <ATen/ops/lu_unpack.h>
 #include <ATen/ops/lu_unpack_native.h>
 #include <ATen/ops/matmul.h>
@@ -1659,6 +1661,40 @@ TORCH_IMPL_FUNC(linalg_lu_factor_ex_out_mps)
 
 TORCH_IMPL_FUNC(linalg_inv_ex_out_mps)(const Tensor& A, bool check_errors, const Tensor& result, const Tensor& info) {
   mps::linalg_inv_ex_out_mps_impl(A, check_errors, result, info);
+}
+
+// Implements cholesky_solve using two triangular solves:
+// If upper=false (L * L^T * x = b):
+//   1. Solve L * y = b for y (lower triangular)
+//   2. Solve L^T * x = y for x (upper triangular via transpose)
+// If upper=true (U^T * U * x = b):
+//   1. Solve U^T * y = b for y (lower triangular via transpose)
+//   2. Solve U * x = y for x (upper triangular)
+Tensor _cholesky_solve_helper_mps(const Tensor& self, const Tensor& A, bool upper) {
+  TORCH_CHECK(self.dim() >= 2, "b should have at least 2 dimensions, but has ", self.dim());
+  TORCH_CHECK(A.dim() >= 2, "A should have at least 2 dimensions, but has ", A.dim());
+
+  // For upper=false: A is L (lower triangular), solve L * L^T * x = b
+  // For upper=true: A is U (upper triangular), solve U^T * U * x = b
+
+  Tensor result;
+  if (upper) {
+    // U^T * U * x = b
+    // Step 1: Solve U^T * y = b (U^T is lower triangular)
+    // Use linalg_solve_triangular with upper=false (treating U^T as lower)
+    // Actually, we need to use the transpose. Let's use the conj_transpose path.
+    auto y = at::linalg_solve_triangular(A.mH(), self, /*upper=*/false, /*left=*/true, /*unitriangular=*/false);
+    // Step 2: Solve U * x = y (upper triangular)
+    result = at::linalg_solve_triangular(A, y, /*upper=*/true, /*left=*/true, /*unitriangular=*/false);
+  } else {
+    // L * L^T * x = b
+    // Step 1: Solve L * y = b (lower triangular)
+    auto y = at::linalg_solve_triangular(A, self, /*upper=*/false, /*left=*/true, /*unitriangular=*/false);
+    // Step 2: Solve L^T * x = y (L^T is upper triangular)
+    result = at::linalg_solve_triangular(A.mH(), y, /*upper=*/true, /*left=*/true, /*unitriangular=*/false);
+  }
+
+  return result;
 }
 
 REGISTER_DISPATCH(cholesky_stub, mps::cholesky_stub_impl)
